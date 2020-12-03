@@ -6,6 +6,10 @@
 
 #![no_std]
 
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use core::convert::TryInto;
 
 /// Length of the MD4 digest in bytes
@@ -90,6 +94,27 @@ impl Md4 {
         }
     }
 
+    /// Insecure interface to initialize MD4 transform state from a digest
+    ///
+    /// Only for Cryptopals challenge #30
+    ///
+    /// NEVER actually do this in practice
+    pub fn from_digest(digest: &[u8; DIGEST_LEN]) -> Self {
+        let mut state = [0_u32; STATE_WORDS_LEN];
+
+        for (i, word) in digest.chunks_exact(WORD_BYTES_LEN).enumerate() {
+            // unwrap safe here, since word is guaranteed to be exactly four bytes long
+            state[i] = u32::from_le_bytes(word.try_into().unwrap());
+        }
+
+        Self {
+            state: state,
+            block: [0_u8; BLOCK_BYTES_LEN],
+            index: 0,
+            total_len: 0,
+        }
+    }
+
     /// Input message bytes into the MD4 transform
     pub fn update(&mut self, msg: &[u8]) -> Result<(), Error> {
         let msg_len = (msg.len() * 8) as u64;
@@ -116,6 +141,39 @@ impl Md4 {
     pub fn finalize(&mut self) -> Result<[u8; DIGEST_LEN], Error> {
         if self.index < BLOCK_BYTES_LEN {
             let old_len = self.index;
+
+            self.pad()?;
+            self.transform();
+
+            if old_len > BLOCK_BYTES_LEN - PAD_AND_LENGTH_LEN {
+                self.full_pad();
+                self.transform();
+            }
+        }
+
+        let mut res = [0_u8; DIGEST_LEN];
+
+        for (i, word) in self.state.iter().enumerate() {
+            res[i * WORD_BYTES_LEN..(i + 1) * WORD_BYTES_LEN]
+                .copy_from_slice(word.to_le_bytes().as_ref());
+        }
+
+        Ok(res)
+    }
+
+    /// Perform *insecure* final padding and encoding of the MD4 digest
+    ///
+    /// This is an intentionally insecure interface for Cryptopals challenge #30
+    ///
+    /// NEVER actually do this in practice
+    ///
+    /// Encode the forged total message length, and compute the digest
+    pub fn finalize_insecure(&mut self, forged_total_len: u64) -> Result<[u8; DIGEST_LEN], Error> {
+        if self.index < BLOCK_BYTES_LEN {
+            let old_len = self.index;
+
+            // forge the total message length
+            self.total_len = forged_total_len;
 
             self.pad()?;
             self.transform();
@@ -262,6 +320,50 @@ impl Md4 {
         }
 
         Ok(())
+    }
+
+    /// Pad a message using MD4 formatting
+    ///
+    /// Only return the padding
+    pub fn pad_message(msg: &[u8]) -> Result<Vec<u8>, Error> {
+        let msg_len = msg.len();
+
+        if msg_len == 0 || msg_len * 8 > core::u64::MAX as usize {
+            return Err(Error::InvalidLength);
+        }
+
+        let total_len = (msg_len * 8) as u64;
+        let mut pad_block = [0_u8; BLOCK_BYTES_LEN];
+
+        let end_len = if msg_len % BLOCK_BYTES_LEN == 0 {
+            // add full block of padding
+            Self::inner_pad(&mut pad_block, 0, total_len)?;
+            0
+        } else if msg_len < BLOCK_BYTES_LEN {
+            // copy message to padding block
+            Self::inner_pad(&mut pad_block, msg_len, total_len)?;
+            msg_len
+        } else {
+            // message is larger than a full block
+            // non-modulo the block length
+            let last_len = msg_len % BLOCK_BYTES_LEN;
+            Self::inner_pad(&mut pad_block, last_len, total_len)?;
+            last_len
+        };
+
+        let mut res: Vec<u8> = Vec::with_capacity(BLOCK_BYTES_LEN * 2);
+
+        // add the padding block to the result
+        res.extend_from_slice(&pad_block[end_len..]);
+
+        if end_len > BLOCK_BYTES_LEN - PAD_AND_LENGTH_LEN {
+            // not enough space to write the total bit length
+            // add a block full of zeroes + total bit length
+            Self::inner_full_pad(&mut pad_block, total_len);
+            res.extend_from_slice(&pad_block);
+        }
+
+        Ok(res)
     }
 
     // Add a full block of padding
@@ -456,5 +558,22 @@ mod tests {
         let digest = md4.finalize().unwrap();
 
         assert_eq!(digest, expected);
+    }
+
+    #[test]
+    fn check_pad() {
+        let msg = [0x69; 93];
+
+        let mut md4 = Md4::new();
+
+        md4.block[..29].copy_from_slice(&msg[64..]);
+        md4.index = 29;
+        md4.total_len = 93 * 8;
+        md4.pad().unwrap();
+
+        let exp_padding = &md4.block[29..];
+        let padding = Md4::pad_message(msg.as_ref()).unwrap();
+
+        assert_eq!(padding[..], exp_padding[..]);
     }
 }
