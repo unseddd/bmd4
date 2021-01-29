@@ -31,21 +31,21 @@ const BLOCK_BYTES_LEN: usize = 64;
 const MSG_BITS_LENGTH_LEN: usize = 8;
 
 // Constants for MD4 transform routine
-const S11: u32 = 3;
-const S12: u32 = 7;
-const S13: u32 = 11;
-const S14: u32 = 19;
-const S21: u32 = 3;
-const S22: u32 = 5;
-const S23: u32 = 9;
-const S24: u32 = 13;
-const S31: u32 = 3;
-const S32: u32 = 9;
-const S33: u32 = 11;
-const S34: u32 = 15;
+pub const S11: u32 = 3;
+pub const S12: u32 = 7;
+pub const S13: u32 = 11;
+pub const S14: u32 = 19;
+pub const S21: u32 = 3;
+pub const S22: u32 = 5;
+pub const S23: u32 = 9;
+pub const S24: u32 = 13;
+pub const S31: u32 = 3;
+pub const S32: u32 = 9;
+pub const S33: u32 = 11;
+pub const S34: u32 = 15;
 
 // Initial state words
-const INIT_STATE: [u32; STATE_WORDS_LEN] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476];
+pub const INIT_STATE: [u32; STATE_WORDS_LEN] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476];
 
 // Magic byte starting the pad and length sequence
 const PAD_START: u8 = 0x80;
@@ -192,6 +192,13 @@ impl Md4 {
         }
 
         Ok(res)
+    }
+
+    /// Convenience function to compute the MD4 digest of a given message
+    pub fn digest(msg: &[u8]) -> Result<[u8; DIGEST_LEN], Error> {
+        let mut h = Self::new();
+        h.update(msg)?;
+        h.finalize()
     }
 
     // Implementation of the MD4 transform over a message block
@@ -378,35 +385,35 @@ impl Md4 {
     }
 
     // F transform
-    fn f(x: u32, y: u32, z: u32) -> u32 {
+    pub fn f(x: u32, y: u32, z: u32) -> u32 {
         (x & y) | ((!x) & z)
     }
 
     // G transform
-    fn g(x: u32, y: u32, z: u32) -> u32 {
+    pub fn g(x: u32, y: u32, z: u32) -> u32 {
         (x & y) | ((x & z) | (y & z))
     }
 
     // H transform
-    fn h(x: u32, y: u32, z: u32) -> u32 {
+    pub fn h(x: u32, y: u32, z: u32) -> u32 {
         x ^ y ^ z
     }
 
     // FF transform for "Round 1"
-    fn ff(a: u32, b: u32, c: u32, d: u32, x: u32, s: u32) -> u32 {
+    pub fn ff(a: u32, b: u32, c: u32, d: u32, x: u32, s: u32) -> u32 {
         let t = ((a as u64 + Self::f(b, c, d) as u64 + x as u64) & 0xffff_ffff) as u32;
         t.rotate_left(s)
     }
 
     // GG transform for "Round 2"
-    fn gg(a: u32, b: u32, c: u32, d: u32, x: u32, s: u32) -> u32 {
+    pub fn gg(a: u32, b: u32, c: u32, d: u32, x: u32, s: u32) -> u32 {
         let t =
             ((a as u64 + Self::g(b, c, d) as u64 + x as u64 + ROOT_2 as u64) & 0xffff_ffff) as u32;
         t.rotate_left(s)
     }
 
     // HH transform for "Round 3"
-    fn hh(a: u32, b: u32, c: u32, d: u32, x: u32, s: u32) -> u32 {
+    pub fn hh(a: u32, b: u32, c: u32, d: u32, x: u32, s: u32) -> u32 {
         let t =
             ((a as u64 + Self::h(b, c, d) as u64 + x as u64 + ROOT_3 as u64) & 0xffff_ffff) as u32;
         t.rotate_left(s)
